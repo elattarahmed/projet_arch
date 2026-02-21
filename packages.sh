@@ -22,50 +22,42 @@ sync_database() {
 }
 
 install_packages() {
-    log_info "Installation des paquets desktop et Display Manager"
+    log_info "Installation des paquets Desktop, Fonts et Drivers"
 
-    # Ajout de lightdm, lightdm-gtk-greeter et xterm (secours)
-    # Ajout de xf86-video-vmware et xf86-video-fbdev pour la compatibilité VM
+    # Ajout de ttf-font-awesome pour les icônes i3
+    # Ajout de feh pour le fond d'écran et picom pour la transparence
     arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed --overwrite "*" \
         xorg-server xorg-xinit xterm mesa xf86-video-fbdev \
         i3-wm i3status dmenu libxft fontconfig ttf-dejavu ttf-font-awesome \
-        lightdm lightdm-gtk-greeter \
+        lightdm lightdm-gtk-greeter feh picom \
         base-devel gcc vim git firefox tmux tree termdown \
         virtualbox virtualbox-guest-iso \
         || die "Echec installation packages"
 
-    # Activation de LightDM
     arch-chroot "$MOUNT_POINT" systemctl enable lightdm || die "Echec activation LightDM"
-
-    log_success "Paquets desktop et LightDM installés"
 }
 
-install_st() {
-    log_info "Compilation de st"
-
-    arch-chroot "$MOUNT_POINT" bash -c '
-        cd /tmp &&
-        rm -rf st &&
-        git clone https://git.suckless.org/st &&
-        cd st &&
-        make clean install
-    ' || die "Echec compilation st"
-
-    log_success "st installé"
+configure_keyboard_fr() {
+    log_info "Fixing keyboard to FR (AZERTY)"
+    mkdir -p "$MOUNT_POINT/etc/X11/xorg.conf.d/"
+    cat << EOF > "$MOUNT_POINT/etc/X11/xorg.conf.d/00-keyboard.conf"
+Section "InputClass"
+        Identifier "system-keyboard"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "fr"
+        Option "XkbVariant" "oss"
+EndSection
+EOF
+    # Pour la console TTY
+    echo "KEYMAP=fr-latin9" > "$MOUNT_POINT/etc/vconsole.conf"
 }
 
 configure_users_ui() {
-    log_info "Configuration i3 (Community Edition) et .xinitrc"
+    log_info "Configuration i3 (Community Edition)"
 
-    # 1. On prépare une config source élégante
-    # On utilise ici un lien vers une config i3 standard optimisée
     local temp_config="/tmp/i3_community_config"
-    rm -rf "$MOUNT_POINT$temp_config"
-    
-    # Option A: Cloner un repo de dotfiles connu (ex: une config i3 de base propre)
-    # Pour l'exemple, on télécharge une config équilibrée
-    curl -L -o "$MOUNT_POINT$temp_config" "https://raw.githubusercontent.com/i3/i3/master/etc/config" || \
-        log_warn "Impossible de récupérer la config distante, utilisation du défaut"
+    # On télécharge une base de config i3 propre et moderne
+    curl -sL "https://raw.githubusercontent.com/i3/i3/master/etc/config" > "$MOUNT_POINT$temp_config"
 
     for user_dir in "$MOUNT_POINT/home/"*; do
         [ -d "$user_dir" ] || continue
@@ -73,49 +65,34 @@ configure_users_ui() {
         [ "$user" == "shared" ] && continue
         arch-chroot "$MOUNT_POINT" id "$user" &>/dev/null || continue
 
-        log_info "Configuration personnalisée pour $user"
-
         local i3_path="$user_dir/.config/i3"
         mkdir -p "$i3_path"
 
-        # Copie de la config
-        if [ -f "$MOUNT_POINT$temp_config" ]; then
-            cp "$MOUNT_POINT$temp_config" "$i3_path/config"
-        else
-            # Fallback minimaliste
-            echo "exec i3" > "$i3_path/config"
-        fi
-
-        # --- PERSONNALISATION DE LA CONFIG ---
-        # 1. Utiliser la touche Windows (Mod4) au lieu de Alt (Mod1)
-        sed -i 's/set $mod Mod1/set $mod Mod4/g' "$i3_path/config"
+        # Copie et Personnalisation
+        cp "$MOUNT_POINT$temp_config" "$i3_path/config"
         
-        # 2. Forcer ton terminal 'st' fraîchement compilé
+        # Configuration AZERTY dans i3 (au cas où) et changement du MOD4 (Windows)
+        sed -i 's/set \$mod Mod1/set \$mod Mod4/g' "$i3_path/config"
         sed -i 's/i3-sensible-terminal/st/g' "$i3_path/config"
-        sed -i 's/bindsym $mod+Return exec terminal/bindsym $mod+Return exec st/g' "$i3_path/config"
+        
+        # Ajout d'une petite touche "communauté" : lanceur d menu plus joli
+        sed -i 's/bindsym \$mod+d exec dmenu_run/bindsym \$mod+d exec dmenu_run -nb "#222222" -nf "#b8bb26" -sb "#b8bb26" -sf "#282828" -fn "monospace-10"/g' "$i3_path/config"
 
-        # 3. Ajouter un fond d'écran (si un outil comme 'feh' est installé)
-        # echo "exec_always --no-startup-id feh --bg-fill /usr/share/backgrounds/arch-wallpaper.jpg" >> "$i3_path/config"
-
-        # .xinitrc
         echo "exec i3" > "$user_dir/.xinitrc"
-
-        # Permissions
         arch-chroot "$MOUNT_POINT" chown -R "$user:$user" "/home/$user"
     done
 }
 
 run_packages() {
-    log_info "===== PACKAGES PHASE ====="
-
-    # Effet visuel Pacman
+    log_info "===== PHASE FINALE : LOGICIELS & UI ====="
     sed -i 's/#Color/Color\nILoveCandy/' "$MOUNT_POINT/etc/pacman.conf" 2>/dev/null
 
     optimize_mirrors
     sync_database
     install_packages
     install_st
+    configure_keyboard_fr  # <--- On ajoute ça ici
     configure_users_ui
 
-    log_success "Installation terminée ! Au prochain redémarrage, LightDM se lancera."
+    log_success "Tout est prêt ! Clavier FR, i3 configuré et LightDM activé."
 }
