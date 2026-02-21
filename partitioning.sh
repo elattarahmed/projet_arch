@@ -88,7 +88,12 @@ generate_fstab() {
     log_info "fstab generation"
 
     genfstab -U "$MOUNT_POINT" >> "$MOUNT_POINT/etc/fstab"
+    
+    sed -i '/[[:space:]]\/boot[[:space:]]/ s/rw,relatime/rw,relatime,nodev,nosuid,noexec/' \
+        "$MOUNT_POINT/etc/fstab" 2>/dev/null || true
 
+    sed -i '/[[:space:]]\/home[[:space:]]/ s/rw,relatime/rw,relatime,nodev,nosuid/' \
+        "$MOUNT_POINT/etc/fstab" 2>/dev/null || true
     log_success "fstab generated"
 }
 
