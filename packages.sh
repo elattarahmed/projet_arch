@@ -1,44 +1,18 @@
 #!/bin/bash
 
+# --- Configuration Clavier & Miroirs ---
+
 optimize_mirrors() {
     log_info "Optimisation des miroirs (France)"
-
     curl -s "https://archlinux.org/mirrorlist/?country=FR&protocol=https&use_mirror_status=on" | \
-    sed 's/^#Server/Server/' > "$MOUNT_POINT/etc/pacman.d/mirrorlist" \
-    || die "Echec du téléchargement mirrorlist"
-
-    log_success "Mirrorlist optimisée"
-}
-
-sync_database() {
-    log_info "Synchronisation forcée des bases"
-
-    arch-chroot "$MOUNT_POINT" rm -f /var/lib/pacman/db.lck
-
-    arch-chroot "$MOUNT_POINT" pacman -Syy --noconfirm \
-    || die "Echec de la synchronisation pacman"
-
-    log_success "Bases synchronisées"
-}
-
-install_packages() {
-    log_info "Installation des paquets Desktop, Fonts et Drivers"
-
-    # Ajout de ttf-font-awesome pour les icônes i3
-    # Ajout de feh pour le fond d'écran et picom pour la transparence
-    arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed --overwrite "*" \
-        xorg-server xorg-xinit xterm mesa xf86-video-fbdev \
-        i3-wm i3status dmenu libxft fontconfig ttf-dejavu ttf-font-awesome \
-        lightdm lightdm-gtk-greeter feh picom \
-        base-devel gcc vim git firefox tmux tree termdown \
-        virtualbox virtualbox-guest-iso \
-        || die "Echec installation packages"
-
-    arch-chroot "$MOUNT_POINT" systemctl enable lightdm || die "Echec activation LightDM"
+    sed 's/^#Server/Server/' > "$MOUNT_POINT/etc/pacman.d/mirrorlist" || die "Echec mirrorlist"
 }
 
 configure_keyboard_fr() {
-    log_info "Fixing keyboard to FR (AZERTY)"
+    log_info "Configuration Clavier AZERTY (Console + X11)"
+    # Console
+    echo "KEYMAP=fr-latin9" > "$MOUNT_POINT/etc/vconsole.conf"
+    # X11 (Interface graphique)
     mkdir -p "$MOUNT_POINT/etc/X11/xorg.conf.d/"
     cat << EOF > "$MOUNT_POINT/etc/X11/xorg.conf.d/00-keyboard.conf"
 Section "InputClass"
@@ -48,15 +22,41 @@ Section "InputClass"
         Option "XkbVariant" "oss"
 EndSection
 EOF
-    # Pour la console TTY
-    echo "KEYMAP=fr-latin9" > "$MOUNT_POINT/etc/vconsole.conf"
 }
 
-configure_users_ui() {
-    log_info "Configuration i3 (Community Edition)"
+# --- Installation & Compilation ---
 
+install_packages() {
+    log_info "Installation des paquets Desktop et Polices"
+    
+    # Correction : On retire xf86-video-vmware (souvent inutile/absent) 
+    # On ajoute mesa (pilote universel) et ttf-font-awesome (icônes i3)
+    arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed --overwrite "*" \
+        xorg-server xorg-xinit xterm mesa xf86-video-fbdev \
+        i3-wm i3status dmenu libxft fontconfig ttf-dejavu ttf-font-awesome \
+        lightdm lightdm-gtk-greeter feh picom \
+        base-devel gcc vim git firefox tmux tree termdown \
+        virtualbox virtualbox-guest-iso || die "Echec installation packages"
+
+    arch-chroot "$MOUNT_POINT" systemctl enable lightdm || die "Echec activation LightDM"
+}
+
+install_st() {
+    log_info "Compilation de st (Suckless Terminal)"
+    arch-chroot "$MOUNT_POINT" bash -c '
+        cd /tmp && rm -rf st
+        git clone https://git.suckless.org/st && cd st
+        make clean install
+    ' || log_warn "Echec compilation st, xterm sera utilisé par défaut"
+}
+
+# --- Interface Utilisateur ---
+
+configure_users_ui() {
+    log_info "Installation du 'Rice' i3 communautaire"
+
+    # Récupération d'une config i3 propre et moderne
     local temp_config="/tmp/i3_community_config"
-    # On télécharge une base de config i3 propre et moderne
     curl -sL "https://raw.githubusercontent.com/i3/i3/master/etc/config" > "$MOUNT_POINT$temp_config"
 
     for user_dir in "$MOUNT_POINT/home/"*; do
@@ -65,18 +65,18 @@ configure_users_ui() {
         [ "$user" == "shared" ] && continue
         arch-chroot "$MOUNT_POINT" id "$user" &>/dev/null || continue
 
+        log_info "Configuring UI for $user"
         local i3_path="$user_dir/.config/i3"
         mkdir -p "$i3_path"
-
-        # Copie et Personnalisation
+        
         cp "$MOUNT_POINT$temp_config" "$i3_path/config"
+
+        # Personnalisation : Touche Windows (Mod4) + Terminal st
+        sed -i "s/set \$mod Mod1/set \$mod Mod4/g" "$i3_path/config"
+        sed -i "s/i3-sensible-terminal/st/g" "$i3_path/config"
         
-        # Configuration AZERTY dans i3 (au cas où) et changement du MOD4 (Windows)
-        sed -i 's/set \$mod Mod1/set \$mod Mod4/g' "$i3_path/config"
-        sed -i 's/i3-sensible-terminal/st/g' "$i3_path/config"
-        
-        # Ajout d'une petite touche "communauté" : lanceur d menu plus joli
-        sed -i 's/bindsym \$mod+d exec dmenu_run/bindsym \$mod+d exec dmenu_run -nb "#222222" -nf "#b8bb26" -sb "#b8bb26" -sf "#282828" -fn "monospace-10"/g' "$i3_path/config"
+        # Ajout du clavier FR directement dans la config i3 (sécurité)
+        echo "exec --no-startup-id setxkbmap fr" >> "$i3_path/config"
 
         echo "exec i3" > "$user_dir/.xinitrc"
         arch-chroot "$MOUNT_POINT" chown -R "$user:$user" "/home/$user"
@@ -84,15 +84,18 @@ configure_users_ui() {
 }
 
 run_packages() {
-    log_info "===== PHASE FINALE : LOGICIELS & UI ====="
+    log_info "===== PHASE LOGICIELS & INTERFACE ====="
     sed -i 's/#Color/Color\nILoveCandy/' "$MOUNT_POINT/etc/pacman.conf" 2>/dev/null
 
     optimize_mirrors
-    sync_database
+    configure_keyboard_fr
+    
+    # On synchronise les bases avant d'installer
+    arch-chroot "$MOUNT_POINT" pacman -Syy --noconfirm
+
     install_packages
     install_st
-    configure_keyboard_fr  # <--- On ajoute ça ici
     configure_users_ui
 
-    log_success "Tout est prêt ! Clavier FR, i3 configuré et LightDM activé."
+    log_success "Installation UI terminée ! Redémarrez et profitez."
 }
