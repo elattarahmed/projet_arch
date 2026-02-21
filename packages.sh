@@ -27,14 +27,14 @@ install_packages() {
     # Ajout de lightdm, lightdm-gtk-greeter et xterm (secours)
     # Ajout de xf86-video-vmware et xf86-video-fbdev pour la compatibilité VM
     arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed --overwrite "*" \
-        xorg-server xorg-xinit xterm xf86-video-vmware xf86-video-fbdev \
+        xorg-server xorg-xinit xterm mesa xf86-video-fbdev \
         i3-wm i3status dmenu libxft fontconfig ttf-dejavu \
         lightdm lightdm-gtk-greeter \
         base-devel gcc vim git firefox tmux tree termdown \
         virtualbox virtualbox-guest-iso \
         || die "Echec installation packages"
 
-    # Activation de LightDM au boot
+    # Activation de LightDM
     arch-chroot "$MOUNT_POINT" systemctl enable lightdm || die "Echec activation LightDM"
 
     log_success "Paquets desktop et LightDM installés"
