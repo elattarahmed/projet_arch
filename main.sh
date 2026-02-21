@@ -15,6 +15,23 @@ init() {
     log_success "Environment is setup. Ready to start"
 }
 
+
+finalize() {
+    log_info "Ending configuration..."
+
+    sync
+
+    log_info "Unmounting partitions..."
+    umount -R "$MOUNT_POINT"
+
+    log_info "Closing LUKS Volume..."
+    cryptsetup close "$CRYPT_NAME" 2>/dev/null || true
+
+    log_success "Installation Ended :))) Restarting..."
+
+    reboot
+}
+
 main() {
     init
 
@@ -22,7 +39,7 @@ main() {
     run_users
     run_packages
 
-    log_success "INSTALLATION COMPLETE"
+    finalize
 }
 
 main "$@"
