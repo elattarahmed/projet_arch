@@ -12,14 +12,14 @@ sync_database() {
 }
 
 install_packages() {
-    log_info "Installation des outils de base et Dev"
+    log_info "Installation des outils de base"
     
     arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed --overwrite "*" \
         base-devel gcc vim git firefox tmux tree termdown \
         virtualbox virtualbox-guest-iso \
         || die "Echec installation packages"
 
-    log_success "Paquets installés (Système de base + Dev)"
+    log_success "Paquets installés"
 }
 
 run_packages() {
@@ -31,5 +31,5 @@ run_packages() {
     sync_database
     install_packages
 
-    log_success "Installation terminée ! Système prêt en mode console (TTY)."
+    log_success "Installation terminée !"
 }
