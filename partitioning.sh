@@ -67,8 +67,8 @@ format_and_mount(){
     swapon "/dev/${VG_NAME}/swap"
 
     mount "/dev/${VG_NAME}/root" "$MOUNT_POINT"
-    mkdir -p "$MOUNT_POINT"/{boot/efi,home,var/lib/virtualbox,var/shared}
-    mount "$EFI_PART" "$MOUNT_POINT/boot/efi"
+    mkdir -p "$MOUNT_POINT"/{boot,home,var/lib/virtualbox,var/shared}
+    mount "$EFI_PART" "$MOUNT_POINT/boot"
     mount "/dev/${VG_NAME}/home" "$MOUNT_POINT/home"
     mount "/dev/${VG_NAME}/virtualbox" "$MOUNT_POINT/var/lib/virtualbox"
     mount "/dev/${VG_NAME}/shared" "$MOUNT_POINT/var/shared"
@@ -123,32 +123,15 @@ configure_grub_luks() {
 install_grub() {
     log_info "Installation of GRUB (EFI)"
 
-    mkdir -p "$MOUNT_POINT/boot/efi"
-    
-    if ! mountpoint -q "$MOUNT_POINT/boot/efi"; then
-        log_info "Mounting /dev/sda1 to /boot/efi..."
-        mount /dev/sda1 "$MOUNT_POINT/boot/efi" || die "Impossible de monter la partition EFI"
-    fi
-
-    arch-chroot "$MOUNT_POINT" pacman -S --noconfirm --needed grub efibootmgr || die "Fail to install grub packages"
-
     arch-chroot "$MOUNT_POINT" grub-install \
         --target=x86_64-efi \
-        --efi-directory=/boot/efi \
+        --efi-directory=/boot \
         --bootloader-id=GRUB \
-        --recheck || die "Fail grub-install"
-
-    local uuid_luks=$(blkid -s UUID -o value /dev/sda2)
-    
-    log_info "Configuring GRUB for LUKS (UUID: $uuid_luks)"
-    
-    arch-chroot "$MOUNT_POINT" sed -i "s|GRUB_CMDLINE_LINUX_DEFAULT=\"[^\"]*\"|GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid_luks:cryptlvm root=/dev/mapper/vg_arch-root\"|" /etc/default/grub
-    arch-chroot "$MOUNT_POINT" sed -i 's/^GRUB_PRELOAD_MODULES="/GRUB_PRELOAD_MODULES="lvm /' /etc/default/grub
-
+        || die "Fail grub-install"
     arch-chroot "$MOUNT_POINT" grub-mkconfig -o /boot/grub/grub.cfg \
         || die "Fail grub-mkconfig"
 
-    log_success "GRUB installed and configured for LUKS/LVM"
+    log_success "GRUB installed"
 }
 
 run_partitioning(){

@@ -3,7 +3,8 @@
 user_create(){
     log_info "Configuration des utilisateurs"
 
-    arch-chroot "$MOUNT_POINT" groupadd famille 2>/dev/null || true
+    arch-chroot "$MOUNT_POINT" groupadd famille 2>/dev/null
+    newgrp famille
 
     USER_PERE="${USER_PERE:-pere}"
     PASS_PERE="${PASS_PERE:-azerty123}"
@@ -43,7 +44,7 @@ shared_folder(){
         mkdir -p "$TARGET_DIR"
     fi
 
-    chown :famille "$TARGET_DIR"
+    arch-chroot "$MOUNT_POINT" chown -R :famille "$TARGET_DIR"
     chmod 770 "$TARGET_DIR"
     chmod +t "$TARGET_DIR"
 
